@@ -1,7 +1,7 @@
 import streamlit as st
 import firebase_admin
 from firebase_admin import auth
-import pyrebase  # Necesitas instalarlo: pip install pyrebase4
+import pyrebase  # pip install pyrebase4
 import datetime
 
 # 🔹 Configuración de Firebase para cliente (Pyrebase)
@@ -18,6 +18,10 @@ firebaseConfig = {
 firebase = pyrebase.initialize_app(firebaseConfig)
 auth_client = firebase.auth()
 
+
+# ---------------------------
+# Registro de usuario
+# ---------------------------
 def registrar_usuario(correo, contrasena):
     try:
         user = auth.create_user(
@@ -28,21 +32,36 @@ def registrar_usuario(correo, contrasena):
     except Exception as e:
         st.error(f"❌ Error al registrar usuario: {e}")
 
+
+# ---------------------------
+# Inicio de sesión
+# ---------------------------
 def iniciar_sesion(correo, contrasena):
     try:
-        # 🔹 Validar credenciales reales con Pyrebase
         user = auth_client.sign_in_with_email_and_password(correo, contrasena)
+        st.session_state.uid = user["localId"]      # 👈 UID para particionar datos
         st.session_state.usuario = correo
         st.success("✅ Inicio de sesión exitoso")
         st.rerun()
     except Exception as e:
         st.error(f"❌ Error al iniciar sesión: {e}")
 
-def cerrar_sesion():
-    if "usuario" in st.session_state:
-        del st.session_state.usuario
-        st.success("👋 Sesión cerrada exitosamente")
 
+
+# ---------------------------
+# Cerrar sesión
+# ---------------------------
+def cerrar_sesion():
+    for k in ["uid", "usuario"]:
+        if k in st.session_state:
+            del st.session_state[k]
+    st.success("👋 Sesión cerrada exitosamente")
+
+
+
+# ---------------------------
+# Recuperar contraseña
+# ---------------------------
 def recuperar_contrasena(correo):
     try:
         auth_client.send_password_reset_email(correo)
@@ -51,6 +70,9 @@ def recuperar_contrasena(correo):
         st.error(f"❌ Error al enviar recuperación: {e}")
 
 
+# ---------------------------
+# Pantalla de login
+# ---------------------------
 def mostrar_login():
     st.markdown("""
         <div style='text-align: center; margin-bottom: 2rem;'>
@@ -79,8 +101,12 @@ def mostrar_login():
         if st.button("Enviar recuperación"):
             recuperar_contrasena(correo)
 
+
+# ---------------------------
+# Mostrar botón de logout
+# ---------------------------
 def mostrar_logout():
     if "usuario" in st.session_state:
-        st.sidebar.markdown(f"👤 Usuario: *{st.session_state.usuario}*")
+        st.sidebar.markdown(f"👤 Usuario: {st.session_state.usuario}")
         if st.sidebar.button("Cerrar sesión"):
             cerrar_sesion()

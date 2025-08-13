@@ -13,7 +13,6 @@ load_dotenv()
 
 db = None  # Variable global
 
-
 # ---------------------------
 # Inicializar Firebase
 # ---------------------------
@@ -39,49 +38,56 @@ def inicializar_firebase():
     firebase_admin.initialize_app(cred)
     db = firestore.client()
 
+# ---------------------------
+# Función auxiliar para ruta segura
+# ---------------------------
+def _coleccion_usuario(nombre_coleccion):
+    uid = st.session_state.get("uid")
+    if not uid or db is None:
+        return None  # <- No rompe la ejecución
+    return db.collection("usuarios").document(uid).collection(nombre_coleccion)
 
 # ---------------------------
 # Ventas
 # ---------------------------
 def guardar_venta(venta_dict):
-    db.collection("ventas").add(venta_dict)
+    ref = _coleccion_usuario("ventas")
+    if not ref:
+        return
+    ref.add(venta_dict)
     logging.info("Venta guardada.")
-
-    # 🔹 Registrar automáticamente en transacciones
-    ingreso = {
-        "Fecha": venta_dict.get("Fecha", datetime.date.today().isoformat()),
-        "Descripción": f"Venta a {venta_dict.get('Cliente', 'Cliente desconocido')}",
-        "Categoría": "Ventas",
-        "Tipo": "Ingreso",
-        "Monto": float(venta_dict.get("Importe Neto", venta_dict.get("Total", 0.0)))
-    }
-    db.collection("transacciones").add(ingreso)
-    logging.info("Ingreso automático registrado para la venta.")
-
-
 
 # ---------------------------
 # Clientes
 # ---------------------------
 def guardar_cliente(id_cliente, cliente_dict):
-    db.collection("clientes").document(id_cliente).set(cliente_dict)
+    ref = _coleccion_usuario("clientes")
+    if not ref:
+        return
+    ref.document(id_cliente).set(cliente_dict)
     logging.info(f"Cliente '{id_cliente}' guardado.")
 
-
 def actualizar_cliente(id_cliente, datos_nuevos):
-    db.collection("clientes").document(id_cliente).update(datos_nuevos)
+    ref = _coleccion_usuario("clientes")
+    if not ref:
+        return
+    ref.document(id_cliente).update(datos_nuevos)
     logging.info(f"Cliente '{id_cliente}' actualizado.")
-
 
 # ---------------------------
 # Transacciones
 # ---------------------------
 def guardar_transaccion(transaccion_dict):
-    db.collection("transacciones").add(transaccion_dict)
+    ref = _coleccion_usuario("transacciones")
+    if not ref:
+        return
+    ref.add(transaccion_dict)
     logging.info("Transacción guardada.")
 
-
 def registrar_pago_cobranza(cliente, monto, metodo_pago, fecha, descripcion=""):
+    ref = _coleccion_usuario("transacciones")
+    if not ref:
+        return
     pago_dict = {
         "Fecha": fecha,
         "Descripción": descripcion or f"Abono de crédito por parte de {cliente}",
@@ -91,29 +97,32 @@ def registrar_pago_cobranza(cliente, monto, metodo_pago, fecha, descripcion=""):
         "Cliente": cliente,
         "Método de pago": metodo_pago
     }
-    db.collection("transacciones").add(pago_dict)
+    ref.add(pago_dict)
     logging.info("Pago de cobranza registrado.")
-
 
 # ---------------------------
 # Productos
 # ---------------------------
 def guardar_producto(producto_dict):
-    # Asegurar que los campos nuevos existan aunque estén vacíos
+    ref = _coleccion_usuario("productos")
+    if not ref:
+        return
     for campo in ["Marca_Tipo", "Modelo", "Color", "Talla"]:
         if campo not in producto_dict:
             producto_dict[campo] = ""
-    db.collection("productos").add(producto_dict)
+    ref.add(producto_dict)
     logging.info("Producto guardado.")
-
 
 def leer_productos():
     columnas = [
         "Clave", "Nombre", "Marca_Tipo", "Modelo", "Color", "Talla",
         "Categoría", "Precio Unitario", "Costo Unitario", "Cantidad", "Descripción"
     ]
+    ref = _coleccion_usuario("productos")
+    if not ref:
+        return pd.DataFrame(columns=columnas)
 
-    docs = db.collection("productos").stream()
+    docs = ref.stream()
     productos = []
     for doc in docs:
         data = doc.to_dict()
@@ -124,48 +133,44 @@ def leer_productos():
         return pd.DataFrame(columns=columnas)
 
     df = pd.DataFrame(productos)
-
     for col in columnas:
         if col not in df.columns:
             df[col] = None
-
     numeric_cols = ["Precio Unitario", "Costo Unitario", "Cantidad"]
     for col in numeric_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
 
     return df[columnas]
 
-
 def actualizar_producto_por_clave(clave, campos_actualizados: dict):
-    # Asegurar que los campos nuevos estén presentes aunque no se envíen
+    ref = _coleccion_usuario("productos")
+    if not ref:
+        return
     for campo in ["Marca_Tipo", "Modelo", "Color", "Talla"]:
         if campo not in campos_actualizados:
             campos_actualizados[campo] = ""
-
-    productos_ref = db.collection("productos")
-    query = productos_ref.where("Clave", "==", clave).get()
+    query = ref.where("Clave", "==", clave).get()
     if query:
         doc_id = query[0].id
-        productos_ref.document(doc_id).update(campos_actualizados)
-        logging.info(f"Producto '{clave}' actualizado.")
-
+        ref.document(doc_id).update(campos_actualizados)
 
 def eliminar_producto_por_clave(clave):
-    productos_ref = db.collection("productos")
-    query = productos_ref.where("Clave", "==", clave).get()
+    ref = _coleccion_usuario("productos")
+    if not ref:
+        return
+    query = ref.where("Clave", "==", clave).get()
     if query:
         doc_id = query[0].id
-        productos_ref.document(doc_id).delete()
-        logging.info(f"Producto '{clave}' eliminado.")
-
+        ref.document(doc_id).delete()
 
 def obtener_id_producto(clave):
-    query = db.collection("productos").where("Clave", "==", clave).get()
+    ref = _coleccion_usuario("productos")
+    if not ref:
+        return None
+    query = ref.where("Clave", "==", clave).get()
     if query:
         return query[0].id
     return None
-
 
 # ---------------------------
 # Reportes y cálculos
@@ -173,11 +178,15 @@ def obtener_id_producto(clave):
 def leer_ventas():
     columnas = [
         "Fecha", "Cliente", "Producto", "Cantidad", "Precio Unitario", "Total",
-        "Descuento", "Importe Neto",  # <-- NUEVOS CAMPOS
+        "Descuento", "Importe Neto",
         "Monto Crédito", "Monto Contado", "Anticipo Aplicado",
         "Método de pago", "Tipo de venta"
     ]
-    docs = db.collection("ventas").stream()
+    ref = _coleccion_usuario("ventas")
+    if not ref:
+        return pd.DataFrame(columns=columnas)
+
+    docs = ref.stream()
     ventas = []
     for doc in docs:
         data = doc.to_dict()
@@ -191,19 +200,20 @@ def leer_ventas():
     for col in columnas:
         if col not in df.columns:
             df[col] = None
-
     numeric_cols = ["Cantidad", "Precio Unitario", "Total", "Descuento", "Importe Neto",
                     "Monto Crédito", "Monto Contado", "Anticipo Aplicado"]
     for col in numeric_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
 
     return df[columnas]
 
-
 def leer_transacciones():
     columnas = ["Fecha", "Descripción", "Categoría", "Tipo", "Monto", "Cliente", "Método de pago"]
-    docs = db.collection("transacciones").stream()
+    ref = _coleccion_usuario("transacciones")
+    if not ref:
+        return pd.DataFrame(columns=columnas)
+
+    docs = ref.stream()
     transacciones = []
     for doc in docs:
         data = doc.to_dict()
@@ -217,16 +227,18 @@ def leer_transacciones():
     for col in columnas:
         if col not in df.columns:
             df[col] = None
-
     if "Monto" in df.columns:
         df["Monto"] = pd.to_numeric(df["Monto"], errors='coerce').fillna(0.0)
 
     return df[columnas]
 
-
 def leer_cobranza():
     columnas = ["Fecha", "Cliente", "Descripción", "Monto", "Método de pago"]
-    docs = db.collection("transacciones").where("Categoría", "==", "Cobranza").stream()
+    ref = _coleccion_usuario("transacciones")
+    if not ref:
+        return pd.DataFrame(columns=columnas)
+
+    docs = ref.where("Categoría", "==", "Cobranza").stream()
     cobranza = []
     for doc in docs:
         data = doc.to_dict()
@@ -239,24 +251,24 @@ def leer_cobranza():
 
     return df
 
-
 def calcular_balance_contable():
     transacciones = leer_transacciones()
     if transacciones.empty:
         return 0, 0, 0
-
     transacciones['Monto'] = pd.to_numeric(transacciones['Monto'], errors='coerce').fillna(0)
     ingresos = transacciones[transacciones['Tipo'] == 'Ingreso']['Monto'].sum()
     egresos = transacciones[transacciones['Tipo'] == 'Egreso']['Monto'].sum()
     balance = ingresos - egresos
     return ingresos, egresos, balance
 
-
 def leer_clientes():
     columnas = ["ID", "Nombre", "Correo", "Teléfono", "Empresa", "RFC", "Límite de crédito"]
-    docs = db.collection("clientes").stream()
-    clientes = []
+    ref = _coleccion_usuario("clientes")
+    if not ref:
+        return pd.DataFrame(columns=columnas)
 
+    docs = ref.stream()
+    clientes = []
     for doc in docs:
         data = doc.to_dict()
         data["ID"] = doc.id
@@ -267,11 +279,9 @@ def leer_clientes():
         return pd.DataFrame(columns=columnas)
 
     df = pd.DataFrame(clientes)
-
     for col in columnas:
         if col not in df.columns:
             df[col] = None
-
     if "Límite de crédito" in df.columns:
         df["Límite de crédito"] = pd.to_numeric(df["Límite de crédito"], errors='coerce').fillna(0.0)
 

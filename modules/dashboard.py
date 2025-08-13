@@ -10,19 +10,24 @@ from dotenv import load_dotenv
 load_dotenv()  # <-- ¡Carga .env antes de importar módulos que dependen de variables de entorno!
 
 def render():
+    # ✅ Verificar sesión antes de continuar
+    if "uid" not in st.session_state:
+        st.warning("⚠️ Debes iniciar sesión para ver el panel.")
+        st.stop()
+
     # 🧭 Cabecera tipo ERP con logo local
     col_logo, col_title = st.columns([1, 4])
     with col_logo:
-        # Asegúrate de que 'assets/logo.png' exista en tu proyecto
         try:
             logo = Image.open("assets/logo.png")
             st.image(logo, width=80)
         except FileNotFoundError:
-            st.warning("Logo no encontrado en 'assets/logo.png'. Asegúrate de que la ruta es correcta.")
-            st.image("https://via.placeholder.com/80", width=80) # Placeholder si no se encuentra el logo
+            st.warning("Logo no encontrado en 'assets/logo.png'.")
+            st.image("https://via.placeholder.com/80", width=80)
     with col_title:
         st.markdown("## MiNegocio Pro")
         st.caption("By Xibalbá Business Suite")
+
 
     st.markdown("### 📊 Panel financiero en tiempo real")
 
